@@ -1,52 +1,72 @@
 import streamlit as st
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score
+import numpy as np
+
+class NaiveBayesClassifier:
+    def fit(self, X, y):
+        self.classes = np.unique(y)
+        self.parameters = {}
+        
+        for i, c in enumerate(self.classes):
+            X_c = X[np.where(y == c)]
+            self.parameters[c] = {
+                'mean': X_c.mean(axis=0),
+                'var': X_c.var(axis=0),
+                'prior': X_c.shape[0] / X.shape[0]
+            }
+
+    def predict(self, X):
+        posteriors = []
+        for x in X:
+            posteriors.append([self._posterior(x, c) for c in self.classes])
+        return self.classes[np.argmax(posteriors, axis=1)]
+    
+    def _posterior(self, x, c):
+        mean = self.parameters[c]['mean']
+        var = self.parameters[c]['var']
+        prior = self.parameters[c]['prior']
+        posterior = np.sum(-0.5 * np.log(2. * np.pi * var) - ((x - mean) ** 2) / (2. * var))
+        return posterior + np.log(prior)
 
 def main():
-    st.title('Sentiment Analysis with Naive Bayes Classifier')
-    
-    # Provide the full path to the CSV file
-    file_path = r"C:\Users\MOORTHY\Downloads\document.csv"
-    
-    # Attempt to load the data
-    try:
-        msg = pd.read_csv(file_path, names=['message', 'label'])
-    except FileNotFoundError:
-        st.error(f"Error: File '{file_path}' not found.")
-        return
-    
-    st.write("Total Instances of Dataset:", msg.shape[0])
-    msg['labelnum'] = msg.label.map({'pos': 1, 'neg': 0})
+    st.title("Tennis Data Classifier")
 
-    # Split data into train and test sets
-    X = msg.message
-    y = msg.labelnum
-    Xtrain, Xtest, ytrain, ytest = train_test_split(X, y)  # Pass y as well
-    
-    # Vectorize the text data
-    count_v = CountVectorizer()
-    Xtrain_dm = count_v.fit_transform(Xtrain)
-    Xtest_dm = count_v.transform(Xtest)
+    # File upload
+    uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
 
-    # Train Naive Bayes classifier
-    clf = MultinomialNB()
-    clf.fit(Xtrain_dm, ytrain)
-    pred = clf.predict(Xtest_dm)
+    if uploaded_file is not None:
+        try:
+            data = pd.read_csv(uploaded_file)
+            st.write("The first 5 rows of data:")
+            st.write(data.head())
 
-    # Display predictions and evaluation metrics
-    st.write('Sample Predictions:')
-    for doc, p in zip(Xtest, pred):
-        p = 'pos' if p == 1 else 'neg'
-        st.write(f"{doc} -> {p}")
+            X = data.iloc[:, :-1]
+            y = data.iloc[:, -1]
 
-    st.write('\nAccuracy Metrics:')
-    st.write('Accuracy:', accuracy_score(ytest, pred))
-    st.write('Recall:', recall_score(ytest, pred))
-    st.write('Precision:', precision_score(ytest, pred))
-    st.write('Confusion Matrix:\n', confusion_matrix(ytest, pred))
+            # Convert categorical data to numerical
+            for col in X.columns:
+                X[col] = X[col].astype('category').cat.codes
+            y = y.astype('category').cat.codes
 
-if __name__ == '__main__':
+            # Split data into train and test sets
+            split_ratio = 0.8
+            indices = np.random.permutation(len(X))
+            train_size = int(len(X) * split_ratio)
+            train_idx, test_idx = indices[:train_size], indices[train_size:]
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+            # Train classifier
+            classifier = NaiveBayesClassifier()
+            classifier.fit(X_train.to_numpy(), y_train.to_numpy())
+
+            # Predict and evaluate
+            y_pred = classifier.predict(X_test.to_numpy())
+            accuracy = np.mean(y_pred == y_test.to_numpy())
+
+            st.write(f"Accuracy: {accuracy:.2f}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
     main()
